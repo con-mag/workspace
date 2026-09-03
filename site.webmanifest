@@ -1,0 +1,10 @@
+{
+  "name":"كون — استوديو المعرفة والعمل",
+  "short_name":"كون",
+  "start_url":"./",
+  "display":"standalone",
+  "background_color":"#eef0f5",
+  "theme_color":"#eef0f5",
+  "dir":"rtl",
+  "lang":"ar"
+}
