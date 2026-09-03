@@ -5,6 +5,6 @@ window.GITHUB_CONFIG = Object.freeze({
   OWNER: "con-mag",
   REPO: "workspace",
   BRANCH: "main",
-  TOKEN: "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",
+  TOKEN: "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",
   ADMIN_PASSWORD: "1122"
 });
