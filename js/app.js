@@ -13,9 +13,11 @@
   const GH_TOKEN = String(GH.TOKEN || '').trim();
   const ADMIN_PASSWORD = String(GH.ADMIN_PASSWORD || '1122');
   const GH_API = `https://api.github.com/repos/${encodeURIComponent(GH_OWNER)}/${encodeURIComponent(GH_REPO)}/contents`;
+
   const LOCAL_KEY = 'central-workspace-local-v4';
   const SESSION_KEY = 'central-workspace-session';
-  const CLOUD_CONFIGURED = !!(GH_OWNER && GH_REPO && GH_TOKEN);
+  const GH_TOKEN_VALUE = GH_TOKEN.replace(/^['"]|['"]$/g,'').trim();
+  const CLOUD_CONFIGURED = !!(GH_OWNER && GH_REPO && GH_TOKEN_VALUE && !/^ضع_توكن|^ضع[-_ ]?التوكن|^YOUR[_-]?TOKEN$/i.test(GH_TOKEN_VALUE));
 
   const baseClients = [{id:'retaj-ali',name:'ريتاج علي',code:'RA',status:'نشط',description:'كاتبة — إدارة صفحة فيسبوك',path:'clients/ريتاج علي',createdAt:'2026-09-01',baseline:true}];
   const baseProjects = [{id:'project-retaj-facebook',clientId:'retaj-ali',name:'إدارة صفحة فيسبوك',status:'نشط',startDate:'2026-09-01',endDate:'2027-04-30',description:'إدارة استراتيجية ومحتوى ونشر وتحليل لصفحة Facebook.',createdAt:'2026-09-01',baseline:true}];
@@ -25,8 +27,8 @@
   let remoteReady=false, pollTimer=null, pollBusy=false, remoteFingerprint='';
   const uniqueById=arr=>{const m=new Map();for(const x of arr||[]){if(x?.id)m.set(x.id,x)}return [...m.values()]};
 
-  function localGet(){try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'{}')}catch{return {}}}
-  function localSave(){localStorage.setItem(LOCAL_KEY,JSON.stringify({custom,clients,projects}))}
+  function loadLocalState(){try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'{}')}catch{return {}}}
+  function localSave(){try{localStorage.setItem(LOCAL_KEY,JSON.stringify({custom,clients,projects}))}catch(e){console.warn('Local state save:',e)}}
   let localDbPromise=null;
   function localDb(){
     if(localDbPromise)return localDbPromise;
@@ -52,11 +54,32 @@
   function setSync(text,cloud){$('#syncText').textContent=text;$('#syncState').textContent=cloud?'حفظ مشترك + مزامنة':'محلي';$('#syncPill').classList.toggle('cloud',!!cloud);$('#systemNumber').textContent=cloud?'SYNC':'LOCAL';$('#systemDesc').textContent=cloud?'البيانات محفوظة مباشرة في GitHub، والأجهزة ترى النسخة المشتركة نفسها.':'الموقع يعمل محليًا؛ ضع توكن GitHub في config.js ليصبح الحفظ مشتركًا بين الأجهزة.';$('#saveNote').textContent=cloud?'الحفظ والمزامنة المشتركان يعملان مباشرة مع GitHub.':'لم يُضبط الحفظ المشترك بعد.'}
   // وجود التوكن يعني أن التطبيق يستطيع استخدام GitHub؛ لا ننتظر أول مزامنة حتى نسمح بالكتابة.
   function hasCloud(){return CLOUD_CONFIGURED}
-  function ghHeaders(){return {'Accept':'application/vnd.github+json','Authorization':`Bearer ${GH_TOKEN}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}}
+  function cloudError(e){
+    if(e?.code==='AUTH_INVALID') return 'توكن GitHub غير صالح أو منتهي الصلاحية (401).';
+    if(e?.code==='AUTH_FORBIDDEN') return 'GitHub رفض العملية (403). تحقق من صلاحية Contents: Read and write، ومن أن التوكن مقيد بالمستودع الصحيح.';
+    if(e?.code==='NOT_FOUND') return 'المستودع أو المسار غير موجود (404). تحقق من OWNER وREPO وBRANCH.';
+    if(e?.code==='VALIDATION') return `GitHub رفض البيانات (422): ${e.message}`;
+    if(e?.code==='CONFLICT') return 'حدث تعارض مع تغيير آخر على GitHub. أعد المحاولة.';
+    if(e instanceof TypeError) return 'تعذر الوصول إلى GitHub. تحقق من اتصال الإنترنت وقيود المتصفح/النطاق.';
+    return e?.message||'خطأ غير معروف';
+  }
+  function ghHeaders(){return {'Accept':'application/vnd.github+json','Authorization':`Bearer ${GH_TOKEN_VALUE}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}}
   async function ghFetch(path,options={}){
-    const r=await fetch(`${GH_API}/${path.split('/').map(encodeURIComponent).join('/')}${options.query||''}`,{...options,headers:{...ghHeaders(),...(options.headers||{})}});
+    const query=options.query||'';
+    const method=String(options.method||'GET').toUpperCase();
+    const cacheBust=(method==='GET'||method==='HEAD') ? `${query}${query.includes('?')?'&':'?'}_=${Date.now()}` : query;
+    const r=await fetch(`${GH_API}/${path.split('/').map(encodeURIComponent).join('/')}${cacheBust}`,{...options,cache:'no-store',headers:{...ghHeaders(),...(options.headers||{})}});
     let data=null; const text=await r.text(); try{data=text?JSON.parse(text):null}catch{data=text}
-    if(!r.ok){const e=new Error(data?.message||data?.error||`GitHub HTTP ${r.status}`);e.status=r.status;e.data=data;throw e}
+    if(!r.ok){
+      const detail=data?.message||data?.error||`GitHub HTTP ${r.status}`;
+      const e=new Error(detail);e.status=r.status;e.data=data;
+      if(r.status===401)e.code='AUTH_INVALID';
+      else if(r.status===403)e.code='AUTH_FORBIDDEN';
+      else if(r.status===404)e.code='NOT_FOUND';
+      else if(r.status===409)e.code='CONFLICT';
+      else if(r.status===422)e.code='VALIDATION';
+      throw e;
+    }
     return data;
   }
   async function ghContents(path){
@@ -72,7 +95,7 @@
   async function ghRaw(path){
     const data=await ghFile(path);
     if(data.contentBase64) return base64ToBlob(data.contentBase64,data.type||mimeFor(data.name||path));
-    if(data.download_url){const r=await fetch(data.download_url,{cache:'no-store'});if(!r.ok)throw new Error(`تعذر تحميل الملف (${r.status})`);return await r.blob()}
+    if(data.download_url){const r=await fetch(data.download_url,{cache:'no-store',headers:ghHeaders()});if(!r.ok)throw new Error(`تعذر تحميل الملف (${r.status})`);return await r.blob()}
     throw new Error('تعذر الوصول إلى محتوى الملف');
   }
   async function ghWrite(path,contentBase64,message,sha='',attempt=0){
@@ -185,7 +208,7 @@
       projects=uniqueById([...baseProjects.map(x=>{const c=clients.find(y=>y.name==='ريتاج علي');return x.name==='إدارة صفحة فيسبوك'&&c?{...x,clientId:c.id}:x}),...(custom.projects||[])]);
       const fingerprint=JSON.stringify({clients:clients.map(x=>[x.id,x.name,x.path]),projects,custom});
       const changed=fingerprint!==remoteFingerprint; remoteFingerprint=fingerprint;remoteReady=true;folderCache.clear();localSave();setSync('مشترك',true);if(changed||currentRoute==='clients'||openClient){renderRoute(currentRoute);if(openClient)await renderClient(openClient)}
-    }catch(e){remoteReady=false;setSync('غير متصل',false);console.warn('GitHub sync:',e); if(String(e?.status)==='401'||String(e?.status)==='403')toast('تعذر الاتصال بـGitHub: تحقق من التوكن وصلاحية Contents: Read and write.')}
+    }catch(e){remoteReady=false;setSync('غير متصل',false);console.warn('GitHub sync:',e);toast(`تعذر الاتصال بـGitHub: ${cloudError(e)}`)}
   }
   function startPolling(){if(!CLOUD_CONFIGURED)return;clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{await refreshCloud()}finally{pollBusy=false}},POLL_MS)}
 
@@ -455,12 +478,12 @@
   function initTheme(){const saved=localStorage.getItem('central-theme');const use=saved||'light';document.documentElement.classList.toggle('dark',use==='dark');$('#themeToggle').onclick=()=>{const d=!document.documentElement.classList.contains('dark');document.documentElement.classList.toggle('dark',d);localStorage.setItem('central-theme',d?'dark':'light')}}
   function boot(){const b=$('#boot'),status=$('#boot-status'),f=$('#fingerprint');const open=async()=>{b.classList.add('scanning');status.textContent='جارٍ فتح المساحة…';await new Promise(r=>setTimeout(r,260));status.textContent='تم التحقق';b.classList.add('hide')};f.onclick=open;f.onpointerdown=e=>f.setPointerCapture?.(e.pointerId);f.onkeydown=e=>{if(e.key==='Enter'||e.key===' ')open()};setTimeout(()=>{status.textContent='المساحة جاهزة — المس البصمة';},900)}
 
-  $('#mobileMenu').onclick=()=>$('#sidebar').classList.add('open');$('#closeSide').onclick=()=>$('#sidebar').classList.remove('open');$('#syncPill').onclick=()=>toast(hasCloud()?'الحفظ المشترك يعمل مباشرة مع GitHub.':'ضع GitHub Token في config.js ثم أعد تحميل الموقع.');$('#addGlobal').onclick=()=>showAdd('global');$('#sideAdd').onclick=()=>showAdd('global');$('#modalClose').onclick=()=>$('#modal').classList.remove('show');$('.modal-backdrop')?.addEventListener('click',()=>$('#modal').classList.remove('show'));
+  $('#mobileMenu').onclick=()=>$('#sidebar').classList.add('open');$('#closeSide').onclick=()=>$('#sidebar').classList.remove('open');$('#syncPill').onclick=async()=>{if(!hasCloud()){toast('ضع GitHub Token في config.js ثم أعد تحميل الموقع.');return}await refreshCloud();};$('#addGlobal').onclick=()=>showAdd('global');$('#sideAdd').onclick=()=>showAdd('global');$('#modalClose').onclick=()=>$('#modal').classList.remove('show');$('.modal-backdrop')?.addEventListener('click',()=>$('#modal').classList.remove('show'));
   $('#clientSearch')?.addEventListener('input',renderClients);
   window.addEventListener('hashchange',()=>{const h=decodeURIComponent(location.hash.slice(1)||'home');if(h.startsWith('client/')){const pieces=h.split('/');const id=pieces[1];const path=pieces.slice(2).filter(Boolean).join('/');goClient(id,path)}else go(h)});
 
   // Local first, then cloud.
-  const l=localGet();if(l.custom)custom={...custom,...l.custom};if(!CLOUD_CONFIGURED){if(l.clients?.length)clients=l.clients;if(l.projects?.length)projects=l.projects;}
+  const l=loadLocalState();if(l.custom)custom={...custom,...l.custom};if(!CLOUD_CONFIGURED){if(l.clients?.length)clients=l.clients;if(l.projects?.length)projects=l.projects;}
   initSearch();initTheme();bindGoButtons();boot();setSync('محلي',false);
   // حالة واضحة أثناء أول اتصال بدل إظهار 'محلي' لحظيًا رغم وجود التوكن.
   if(CLOUD_CONFIGURED)setSync('جاري الاتصال',false);
