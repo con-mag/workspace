@@ -122,14 +122,20 @@ async function handle(req, res) {
       const p = safePath(q.path);
       const data = await contents(p);
       if (Array.isArray(data)) throw new Error("المسار مجلد");
-      const content = data.content ? utf8b64(data.content) : "";
-      let parsed = content;
+      let contentBase64 = data.content ? String(data.content).replace(/\n/g, "") : "";
+      // GitHub may omit file content for larger files. Fetch the raw bytes server-side
+      // so the browser can preview PDF/DOCX/images without exposing the GitHub token.
+      if (!contentBase64 && data.download_url) {
+        const raw = await fetch(data.download_url, {headers:{"Authorization":`Bearer ${TOKEN}`,"Accept":"application/vnd.github.raw"}});
+        if (raw.ok) contentBase64 = Buffer.from(await raw.arrayBuffer()).toString("base64");
+      }
+      let parsed = contentBase64 ? utf8b64(contentBase64) : "";
       if (p.endsWith(".client.json") || p === "data/custom.json") {
-        try { parsed = JSON.parse(content); } catch {}
+        try { parsed = JSON.parse(parsed); } catch {}
       }
       return res.status(200).json({ok:true,data:{
         name:data.name,path:data.path,sha:data.sha,size:data.size||0,
-        download_url:data.download_url,html_url:data.html_url,content:parsed
+        download_url:data.download_url,html_url:data.html_url,content:parsed,contentBase64
       }});
     }
 
