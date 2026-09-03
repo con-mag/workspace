@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const CFG = window.APP_CONFIG || {};
+  const POLL_MS = 15000;
   const K = window.KNOWLEDGE || { knowledge: [], ideas: [], terms: [], sources: [], playbook: [], standards: [] };
   const $ = (s, r=document) => r.querySelector(s);
   const $$ = (s, r=document) => [...r.querySelectorAll(s)];
@@ -50,7 +50,8 @@
   function notifySave(text){const b=$('#saveBanner'),t=$('#saveBannerText');if(!b||!t)return;t.textContent=text;b.classList.add('show');clearTimeout(notifySave.timer);notifySave.timer=setTimeout(()=>b.classList.remove('show'),2600)}
   function toast(text){const el=$('#toast');if(!el)return;el.textContent=text;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),3000)}
   function setSync(text,cloud){$('#syncText').textContent=text;$('#syncState').textContent=cloud?'حفظ مشترك + مزامنة':'محلي';$('#syncPill').classList.toggle('cloud',!!cloud);$('#systemNumber').textContent=cloud?'SYNC':'LOCAL';$('#systemDesc').textContent=cloud?'البيانات محفوظة مباشرة في GitHub، والأجهزة ترى النسخة المشتركة نفسها.':'الموقع يعمل محليًا؛ ضع توكن GitHub في config.js ليصبح الحفظ مشتركًا بين الأجهزة.';$('#saveNote').textContent=cloud?'الحفظ والمزامنة المشتركان يعملان مباشرة مع GitHub.':'لم يُضبط الحفظ المشترك بعد.'}
-  function hasCloud(){return CLOUD_CONFIGURED && remoteReady}
+  // وجود التوكن يعني أن التطبيق يستطيع استخدام GitHub؛ لا ننتظر أول مزامنة حتى نسمح بالكتابة.
+  function hasCloud(){return CLOUD_CONFIGURED}
   function ghHeaders(){return {'Accept':'application/vnd.github+json','Authorization':`Bearer ${GH_TOKEN}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}}
   async function ghFetch(path,options={}){
     const r=await fetch(`${GH_API}/${path.split('/').map(encodeURIComponent).join('/')}${options.query||''}`,{...options,headers:{...ghHeaders(),...(options.headers||{})}});
@@ -168,6 +169,7 @@
 
   async function refreshCloud(){
     if(!CLOUD_CONFIGURED){remoteReady=false;setSync('محلي',false);return}
+    setSync('جاري الاتصال',false);
     try{
       const root=await ghContents('clients');
       const dirs=(Array.isArray(root)?root:[]).filter(x=>x.type==='dir'&&!x.name.startsWith('.'));
@@ -185,7 +187,7 @@
       const changed=fingerprint!==remoteFingerprint; remoteFingerprint=fingerprint;remoteReady=true;folderCache.clear();localSave();setSync('مشترك',true);if(changed||currentRoute==='clients'||openClient){renderRoute(currentRoute);if(openClient)await renderClient(openClient)}
     }catch(e){remoteReady=false;setSync('غير متصل',false);console.warn('GitHub sync:',e); if(String(e?.status)==='401'||String(e?.status)==='403')toast('تعذر الاتصال بـGitHub: تحقق من التوكن وصلاحية Contents: Read and write.')}
   }
-  function startPolling(){if(!CLOUD_CONFIGURED)return;clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{await refreshCloud()}finally{pollBusy=false}},Math.max(10000,Number(CFG.POLL_MS||15000)))}
+  function startPolling(){if(!CLOUD_CONFIGURED)return;clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{await refreshCloud()}finally{pollBusy=false}},POLL_MS)}
 
   function go(route){currentRoute=route;openClient=null;currentPath='';selectedFile=null;location.hash=route;$$('.route').forEach(r=>r.classList.toggle('active',r.dataset.routeView===route));$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.route===route));renderRoute(route);window.scrollTo({top:0,behavior:'smooth'});if(innerWidth<861)$('#sidebar').classList.remove('open')}
   function goClient(id,path='',file=null){openClient=id;currentRoute='client';currentPath=path||'';selectedFile=file;location.hash=`client/${encodeURIComponent(id)}${path?`/${encodeURIComponent(path)}`:''}`;$$('.route').forEach(r=>r.classList.toggle('active',r.dataset.routeView==='client'));$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.route==='clients'));renderClient(id);window.scrollTo({top:0,behavior:'smooth'});if(innerWidth<861)$('#sidebar').classList.remove('open')}
@@ -370,7 +372,7 @@
     if(!(await ensureLogin()))return;
     try{const value=$('#fileEditor').value;const blob=new Blob([value],{type:item.mime||mimeFor(path)});await localPut({...item,blob,size:blob.size,updatedAt:new Date().toISOString()});folderCache.clear();toast('تم حفظ الملف محليًا.')}catch(e){toast(`تعذر الحفظ: ${e.message}`)}
   }
-  async function saveTextFile(clientId,path,f){if(!(await ensureLogin()))return;try{await mutateGithub('update_file',{path:`${clientPath(clientId)}/${path}`,contentBase64:bytesToBase64(new TextEncoder().encode($('#fileEditor').value).buffer),sha:f?.sha||''});toast('تم حفظ التعديلات.')}catch(e){toast(`تعذر الحفظ: ${e.message}`)}}
+  async function saveTextFile(clientId,path,f){if(!(await ensureLogin()))return;try{await mutateGithub('update_file',{path:`${clientPath(clientId)}/${path}`,contentBase64:bytesToBase64(new TextEncoder().encode($('#fileEditor').value).buffer),sha:f?.sha||''});folderCache.clear();await renderClient(clientId);toast('تم حفظ التعديلات.')}catch(e){toast(`تعذر الحفظ: ${e.message}`)}}
   async function deleteClientPath(clientId,path){
     if(!(await ensureLogin()))return;
     if(!confirm(`سيتم حذف «${path.split('/').pop()}». هل تريد المتابعة؟`))return;
@@ -408,7 +410,7 @@
           if(blob.size>4*1024*1024)throw new Error('حد الملف 4MB في هذه النسخة');
           await localPut({key:localKey(extra.clientId,path),clientId:extra.clientId,name,type:'file',path,parent,size:blob.size,mime:blob.type,blob,createdAt:new Date().toISOString()});
         }
-        modal.classList.remove('show');folderCache.clear();await renderClient(extra.clientId);toast(hasCloud()?'تمت إضافة الملف إلى المستودع.':'تمت إضافة الملف محليًا إلى هذا المتصفح.');return
+        modal.classList.remove('show');folderCache.clear();await refreshCloud();if(openClient===extra.clientId)await renderClient(extra.clientId);toast(hasCloud()?'تمت إضافة الملف إلى المستودع.':'تمت إضافة الملف محليًا إلى هذا المتصفح.');return
       }
       if(type==='client-folder'){
         const n=String(fd.get('name')||'').trim();const p=String(fd.get('parent')||'').trim().replace(/^\/+|\/+$/g,'');
@@ -416,7 +418,7 @@
         const folderPath=p?`${p}/${n}`:n;
         if(hasCloud())await mutateGithub('create_folder',{path:`${clientPath(extra.clientId)}/${folderPath}/.keep`});
         else await localPut({key:localKey(extra.clientId,folderPath),clientId:extra.clientId,name:n,type:'folder',path:folderPath,parent:p,size:0,createdAt:new Date().toISOString()});
-        modal.classList.remove('show');folderCache.clear();currentPath=folderPath;await renderClient(extra.clientId);toast(hasCloud()?'تم إنشاء المجلد.':'تم إنشاء المجلد محليًا.');return
+        modal.classList.remove('show');folderCache.clear();currentPath=folderPath;await refreshCloud();if(openClient===extra.clientId)await renderClient(extra.clientId);toast(hasCloud()?'تم إنشاء المجلد.':'تم إنشاء المجلد محليًا.');return
       }
       if(type==='client'){
         const name=String(fd.get('title')||'').trim(); const code=String(fd.get('code')||name.slice(0,2)).trim(); const description=String(fd.get('content')||'').trim();
@@ -460,6 +462,8 @@
   // Local first, then cloud.
   const l=localGet();if(l.custom)custom={...custom,...l.custom};if(!CLOUD_CONFIGURED){if(l.clients?.length)clients=l.clients;if(l.projects?.length)projects=l.projects;}
   initSearch();initTheme();bindGoButtons();boot();setSync('محلي',false);
+  // حالة واضحة أثناء أول اتصال بدل إظهار 'محلي' لحظيًا رغم وجود التوكن.
+  if(CLOUD_CONFIGURED)setSync('جاري الاتصال',false);
   const initialHash=decodeURIComponent(location.hash.slice(1)||'home');
   if(initialHash.startsWith('client/')){const pieces=initialHash.split('/');goClient(pieces[1],pieces.slice(2).filter(Boolean).join('/'))}else go(initialHash);
   bindAddButtons();
