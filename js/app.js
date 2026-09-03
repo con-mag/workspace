@@ -1,16 +1,24 @@
 (() => {
   'use strict';
+  const POLL_MS = 15000;
   const K = window.KNOWLEDGE || { knowledge: [], ideas: [], terms: [], sources: [], playbook: [], standards: [] };
   const $ = (s, r=document) => r.querySelector(s);
   const $$ = (s, r=document) => [...r.querySelectorAll(s)];
   const esc = s => String(s ?? '').replace(/[&<>'"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[m]));
   const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const APP = window.APP_CONFIG || {};
-  const API_BASE = String(APP.API_BASE || '/api').replace(/\/$/, '');
-  const POLL_MS = Number(APP.POLL_MS || 15000);
-  const CLOUD_CONFIGURED = !!API_BASE;
-  const LOCAL_KEY = 'central-workspace-local-v5';
-  const SESSION_KEY = 'central-workspace-session-v2';
+  const GH = window.GITHUB_CONFIG || {};
+  const GH_OWNER = String(GH.OWNER || 'con-mag').trim();
+  const GH_REPO = String(GH.REPO || 'workspace').trim();
+  const GH_BRANCH = String(GH.BRANCH || 'main').trim();
+  const GH_TOKEN = String(GH.TOKEN || '').trim();
+  const ADMIN_PASSWORD = String(GH.ADMIN_PASSWORD || '1122');
+  const GH_API = `https://api.github.com/repos/${encodeURIComponent(GH_OWNER)}/${encodeURIComponent(GH_REPO)}/contents`;
+
+  const LOCAL_KEY = 'central-workspace-local-v4';
+  const SESSION_KEY = 'central-workspace-session';
+  const GH_TOKEN_VALUE = GH_TOKEN.replace(/^['"]|['"]$/g,'').trim();
+  const CLOUD_CONFIGURED = !!(GH_OWNER && GH_REPO && GH_TOKEN_VALUE && !/^ضع_توكن|^ضع[-_ ]?التوكن|^YOUR[_-]?TOKEN$/i.test(GH_TOKEN_VALUE));
+
   const baseClients = [{id:'retaj-ali',name:'ريتاج علي',code:'RA',status:'نشط',description:'كاتبة — إدارة صفحة فيسبوك',path:'clients/ريتاج علي',createdAt:'2026-09-01',baseline:true}];
   const baseProjects = [{id:'project-retaj-facebook',clientId:'retaj-ali',name:'إدارة صفحة فيسبوك',status:'نشط',startDate:'2026-09-01',endDate:'2027-04-30',description:'إدارة استراتيجية ومحتوى ونشر وتحليل لصفحة Facebook.',createdAt:'2026-09-01',baseline:true}];
   let custom={entries:[],projects:[],knowledge:[],ideas:[],sources:[]};
@@ -38,57 +46,98 @@
   async function localRemove(key){const db=await localDb();return new Promise((resolve,reject)=>{const req=db.transaction('items','readwrite').objectStore('items').delete(key);req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error)})}
   function localKey(clientId,path){return `${clientId}::${String(path||'').replace(/^\/+|\/+$/g,'')}`}
   function mimeFor(name){const ext=(name.split('.').pop()||'').toLowerCase();return ({txt:'text/plain',md:'text/markdown',csv:'text/csv',json:'application/json',html:'text/html',css:'text/css',js:'text/javascript',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',doc:'application/msword',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',xls:'application/vnd.ms-excel',pdf:'application/pdf',png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp',gif:'image/gif',svg:'image/svg+xml',mp4:'video/mp4',webm:'video/webm'})[ext]||'application/octet-stream'}
-  function session(){try{const o=JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null');if(o?.expiresAt>Date.now())return o.token;sessionStorage.removeItem(SESSION_KEY)}catch{}return ''}
-  function setSession(token,expiresAt){sessionStorage.setItem(SESSION_KEY,JSON.stringify({token,expiresAt:Number(expiresAt||Date.now()+8*60*60*1000)}))}
+  function session(){try{const o=JSON.parse(sessionStorage.getItem(SESSION_KEY)||'null'); if(o?.expiresAt>Date.now()) return o.token; sessionStorage.removeItem(SESSION_KEY)}catch{} return ''}
+  function setSession(){sessionStorage.setItem(SESSION_KEY,JSON.stringify({token:'local-admin',expiresAt:Date.now()+8*60*60*1000}))}
   function clearSession(){sessionStorage.removeItem(SESSION_KEY)}
   function notifySave(text){const b=$('#saveBanner'),t=$('#saveBannerText');if(!b||!t)return;t.textContent=text;b.classList.add('show');clearTimeout(notifySave.timer);notifySave.timer=setTimeout(()=>b.classList.remove('show'),2600)}
   function toast(text){const el=$('#toast');if(!el)return;el.textContent=text;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),3000)}
-  function setSync(text,cloud){$('#syncText').textContent=text;$('#syncState').textContent=cloud?'حفظ مشترك + مزامنة':'محلي';$('#syncPill').classList.toggle('cloud',!!cloud);$('#systemNumber').textContent=cloud?'SYNC':'LOCAL';$('#systemDesc').textContent=cloud?'البيانات محفوظة عبر واجهة API آمنة، والأجهزة ترى النسخة المشتركة نفسها.':'الموقع يعمل محليًا؛ اربط API الحفظ المشترك ليعمل بين الأجهزة.';$('#saveNote').textContent=cloud?'الحفظ والمزامنة المشتركان يعملان.':'الحفظ المشترك غير متاح حاليًا.'}
+  function setSync(text,cloud){$('#syncText').textContent=text;$('#syncState').textContent=cloud?'حفظ مشترك + مزامنة':'محلي';$('#syncPill').classList.toggle('cloud',!!cloud);$('#systemNumber').textContent=cloud?'SYNC':'LOCAL';$('#systemDesc').textContent=cloud?'البيانات محفوظة مباشرة في GitHub، والأجهزة ترى النسخة المشتركة نفسها.':'الموقع يعمل محليًا؛ ضع توكن GitHub في config.js ليصبح الحفظ مشتركًا بين الأجهزة.';$('#saveNote').textContent=cloud?'الحفظ والمزامنة المشتركان يعملان مباشرة مع GitHub.':'لم يُضبط الحفظ المشترك بعد.'}
+  // وجود التوكن يعني أن التطبيق يستطيع استخدام GitHub؛ لا ننتظر أول مزامنة حتى نسمح بالكتابة.
   function hasCloud(){return CLOUD_CONFIGURED}
   function cloudError(e){
-    if(e?.status===401)return 'جلسة التعديل غير صالحة أو انتهت. أدخل كلمة المرور مرة أخرى.';
-    if(e?.status===403)return 'الخادم رفض العملية. تحقق من إعدادات API وصلاحيات GitHub.';
-    if(e?.status===404)return 'واجهة الحفظ غير موجودة. تحقق من عنوان API_BASE ونشر الـAPI.';
-    if(e?.status===409)return 'حدث تعارض مع تغيير آخر. أعد المحاولة.';
-    if(e?.status===422)return `تم رفض البيانات: ${e.message}`;
-    if(e instanceof TypeError)return 'تعذر الوصول إلى واجهة الحفظ. تحقق من الاتصال وإعدادات CORS.';
+    if(e?.code==='AUTH_INVALID') return 'توكن GitHub غير صالح أو منتهي الصلاحية (401).';
+    if(e?.code==='AUTH_FORBIDDEN') return 'GitHub رفض العملية (403). تأكد من أن التوكن يملك Contents: Read and write وأن المستودع con-mag/workspace مُحدد ضمن صلاحياته.';
+    if(e?.code==='NOT_FOUND') return 'المستودع أو المسار غير موجود (404). تحقق من OWNER وREPO وBRANCH.';
+    if(e?.code==='VALIDATION') return `GitHub رفض البيانات (422): ${e.message}`;
+    if(e?.code==='CONFLICT') return 'حدث تعارض مع تغيير آخر على GitHub. أعد المحاولة.';
+    if(e instanceof TypeError) return 'تعذر الوصول إلى GitHub. تحقق من اتصال الإنترنت وقيود المتصفح/النطاق.';
     return e?.message||'خطأ غير معروف';
   }
-  function apiUrl(action,params={}){const u=new URL(API_BASE,location.href);u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>{if(v!==undefined&&v!==null)u.searchParams.set(k,String(v))});return u.toString()}
-  async function apiFetch(action,{method='GET',params={},body=null,auth=false,raw=false,retry=0}={}){
-    const headers={'Accept':'application/json'};
-    if(body!==null)headers['Content-Type']='application/json';
-    if(auth){const t=session();if(!t){const e=new Error('Unauthorized');e.status=401;throw e}headers.Authorization=`Bearer ${t}`}
+  function ghHeaders(){return {'Accept':'application/vnd.github+json','Authorization':`Bearer ${GH_TOKEN_VALUE}`,'X-GitHub-Api-Version':'2022-11-28'}}
+  async function ghFetch(path,options={},attempt=0){
+    const query=options.query||'';
+    const method=String(options.method||'GET').toUpperCase();
+    const cacheBust=(method==='GET'||method==='HEAD') ? `${query}${query.includes('?')?'&':'?'}_=${Date.now()}` : query;
+    const headers={...ghHeaders(),...(options.headers||{})};
+    if(method!=='GET'&&method!=='HEAD'&&!headers['Content-Type'])headers['Content-Type']='application/json';
     let r;
-    try{r=await fetch(apiUrl(action,params),{method,headers,body:body===null?undefined:JSON.stringify(body),cache:'no-store'})}
-    catch(e){if(retry<2){await new Promise(x=>setTimeout(x,500*(retry+1)));return apiFetch(action,{method,params,body,auth,raw,retry:retry+1})}throw e}
-    if(raw){if(!r.ok){const e=new Error(`HTTP ${r.status}`);e.status=r.status;throw e}return r.blob()}
-    const text=await r.text();let data={};try{data=text?JSON.parse(text):{}}catch{data={error:text}}
-    if(!r.ok){const e=new Error(data.error||`HTTP ${r.status}`);e.status=r.status;e.data=data;throw e}
+    try{r=await fetch(`${GH_API}/${path.split('/').map(encodeURIComponent).join('/')}${cacheBust}`,{...options,cache:'no-store',headers});}
+    catch(err){
+      if(attempt<2){await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));return ghFetch(path,options,attempt+1)}
+      throw err;
+    }
+    let data=null; const text=await r.text(); try{data=text?JSON.parse(text):null}catch{data=text}
+    if(!r.ok){
+      const detail=data?.message||data?.error||`GitHub HTTP ${r.status}`;
+      const e=new Error(detail);e.status=r.status;e.data=data;e.headers=r.headers;
+      if(r.status===401)e.code='AUTH_INVALID';
+      else if(r.status===403)e.code='AUTH_FORBIDDEN';
+      else if(r.status===404)e.code='NOT_FOUND';
+      else if(r.status===409)e.code='CONFLICT';
+      else if(r.status===422)e.code='VALIDATION';
+      if([429,500,502,503,504].includes(r.status)&&attempt<2){await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));return ghFetch(path,options,attempt+1)}
+      throw e;
+    }
     return data;
   }
-  async function ghContents(path){const r=await apiFetch('tree',{params:{path:String(path||'').replace(/^\/+|\/+$/g,'')}});return r.data||[]}
-  async function ghFile(path){const r=await apiFetch('file',{params:{path:String(path||'').replace(/^\/+|\/+$/g,'')}});const d=r.data||{};return {...d,contentBase64:String(d.contentBase64||'').replace(/\s/g,'')}}
-  async function ghRaw(path){return apiFetch('raw',{params:{path:String(path||'').replace(/^\/+|\/+$/g,'')},auth:true,raw:true})}
+  async function ghContents(path){
+    const p=String(path||'').replace(/^\/+|\/+$/g,'');
+    return ghFetch(p, {query:`?ref=${encodeURIComponent(GH_BRANCH)}`});
+  }
+  async function ghFile(path){
+    const data=await ghContents(path);
+    if(Array.isArray(data)) throw new Error('المسار مجلد');
+    let contentBase64=String(data.content||'').replace(/\s/g,'');
+    return {...data,contentBase64};
+  }
+  async function ghRaw(path){
+    const data=await ghFile(path);
+    if(data.contentBase64) return base64ToBlob(data.contentBase64,data.type||mimeFor(data.name||path));
+    if(data.download_url){const r=await fetch(data.download_url,{cache:'no-store',headers:ghHeaders()});if(!r.ok)throw new Error(`تعذر تحميل الملف (${r.status})`);return await r.blob()}
+    throw new Error('تعذر الوصول إلى محتوى الملف');
+  }
   async function ghWrite(path,contentBase64,message,sha='',attempt=0){
-    try{return (await apiFetch('update_file',{method:'POST',auth:true,body:{path,contentBase64:String(contentBase64||''),sha,message}})).data}
-    catch(e){if(e.status===409&&attempt<2){const fresh=await ghFile(path);return ghWrite(path,contentBase64,message,fresh.sha,attempt+1)}throw e}
+    const body={message,content:String(contentBase64||''),branch:GH_BRANCH}; if(sha)body.sha=sha;
+    try{return await ghFetch(path,{method:'PUT',body:JSON.stringify(body)})}
+    catch(e){
+      if(e.status===409 && attempt<2){
+        let fresh; try{fresh=await ghFile(path)}catch(err){throw e}
+        return ghWrite(path,contentBase64,message,fresh.sha,attempt+1);
+      }
+      throw e;
+    }
   }
   async function ghCreate(path,contentBase64,message){
     try{await ghFile(path);throw new Error('يوجد ملف بهذا الاسم بالفعل. اختر اسمًا آخر.')}
     catch(e){if(e.status!==404)throw e}
-    return (await apiFetch('create_file',{method:'POST',auth:true,body:{path,contentBase64:String(contentBase64||''),message}})).data
+    return ghWrite(path,contentBase64,message,'');
   }
-  async function ghDelete(path,sha=''){return (await apiFetch('delete_path',{method:'POST',auth:true,body:{path,sha}})).data}
-  async function ghRename(path,newPath){return (await apiFetch('rename_path',{method:'POST',auth:true,body:{path,newPath}})).data}
+  async function ghDelete(path,sha,attempt=0){
+    const item=sha?{sha}:await ghFile(path);
+    try{return await ghFetch(path,{method:'DELETE',body:JSON.stringify({message:`Delete ${path}`,branch:GH_BRANCH,sha:item.sha})})}
+    catch(e){
+      if(e.status===409&&attempt<2){const fresh=await ghFile(path);return ghDelete(path,fresh.sha,attempt+1)}
+      throw e;
+    }
+  }
   async function ensureLogin(){
-    if(session())return true;
+    if(session()) return true;
     return new Promise(resolve=>{
       const mc=$('#modalContent'),modal=$('#modal');
       mc.innerHTML=`<div class="password-box"><div class="password-icon">⌁</div><h2>صلاحية التعديل</h2><p>أدخل كلمة مرور المدير للمتابعة.</p><div class="field"><label>كلمة المرور</label><input id="adminPass" class="password-input" type="password" inputmode="numeric" maxlength="64" autocomplete="off" placeholder="••••"></div><div class="modal-actions"><button class="primary-btn" id="passOk">متابعة</button><button class="ghost-btn" id="passCancel">إلغاء</button></div></div>`;
-      modal.classList.add('show');setTimeout(()=>$('#adminPass')?.focus(),30);
-      const close=()=>{modal.classList.remove('show');resolve(false)};$('#passCancel').onclick=close;
-      $('#passOk').onclick=async()=>{const pass=String($('#adminPass')?.value||'');if(!pass)return;try{const r=await apiFetch('login',{method:'POST',body:{password:pass}});setSession(r.token,r.expiresAt);modal.classList.remove('show');resolve(true)}catch(e){toast(e.status===401?'كلمة المرور غير صحيحة.':`تعذر تسجيل الدخول: ${cloudError(e)}`);$('#adminPass').select()}};
+      modal.classList.add('show'); setTimeout(()=>$('#adminPass')?.focus(),30);
+      const close=()=>{modal.classList.remove('show');resolve(false)}; $('#passCancel').onclick=close;
+      $('#passOk').onclick=()=>{const pass=String($('#adminPass')?.value||'');if(pass===ADMIN_PASSWORD){setSession();modal.classList.remove('show');resolve(true)}else{toast('كلمة المرور غير صحيحة.');$('#adminPass').select()}};
       $('#adminPass').onkeydown=e=>{if(e.key==='Enter')$('#passOk').click();if(e.key==='Escape')close()};
     });
   }
@@ -101,16 +150,43 @@
       if(action==='create_file')r=await ghCreate(payload.path,payload.contentBase64,`Add ${payload.path}`);
       else if(action==='update_file')r=await ghWrite(payload.path,payload.contentBase64,`Update ${payload.path}`,payload.sha||'');
       else if(action==='create_folder')r=await ghCreate(payload.path,btoa(''),`Create ${payload.path}`);
-      else if(action==='delete_path')r=await ghDelete(payload.path,payload.sha||'');
-      else if(action==='rename_path')r=await ghRename(payload.path,payload.newPath);
+      else if(action==='delete_path')r=await recursiveDelete(payload.path);
+      else if(action==='rename_path')r=await recursiveRename(payload.path,payload.newPath);
       else if(action==='mutate_data')r=await mutateData(payload.kind,payload.operation,payload.item);
       else throw new Error('عملية غير مدعومة');
-      remoteReady=true;notifySave('تم الحفظ بنجاح');return r;
+      remoteReady=true; notifySave('تم الحفظ على GitHub'); return r;
     }finally{mutationBusy=false}
   }
   async function mutateData(kind,operation,item){
-    const allowed=['entries','projects','knowledge','ideas','sources'];if(!allowed.includes(kind))throw new Error('نوع بيانات غير مسموح');
-    const r=await apiFetch('mutate_data',{method:'POST',auth:true,body:{kind,operation,item}});return r.data;
+    const allowed=['entries','projects','knowledge','ideas','sources']; if(!allowed.includes(kind))throw new Error('نوع بيانات غير مسموح');
+    for(let attempt=0;attempt<3;attempt++){
+      const f=await ghFile('data/custom.json'); let current={entries:[],projects:[],knowledge:[],ideas:[],sources:[]};
+      try{current=JSON.parse(utf8b64(f.contentBase64||''))||current}catch{}
+      current[kind]=Array.isArray(current[kind])?current[kind]:[];
+      if(operation==='add')current[kind].unshift(item);
+      else if(operation==='delete')current[kind]=current[kind].filter(x=>x.id!==item?.id);
+      else if(operation==='update')current[kind]=current[kind].map(x=>x.id===item?.id?item:x);
+      else throw new Error('عملية غير مسموحة');
+      try{return await ghWrite('data/custom.json',b64utf8(JSON.stringify(current,null,2)),`Update custom data (${kind})`,f.sha)}catch(e){if(e.status===409&&attempt<2)continue;throw e}
+    }
+  }
+  async function recursiveDelete(path){
+    const item=await ghContents(path);
+    if(Array.isArray(item)){for(const child of item)await recursiveDelete(child.path);return}
+    return ghDelete(item.path,item.sha);
+  }
+  async function fileBase64(path,item){
+    if(item?.content)return String(item.content).replace(/\s/g,'');
+    const blob=await ghRaw(path);return bytesToBase64(await blob.arrayBuffer());
+  }
+  async function recursiveRename(oldPath,newPath){
+    let targetExists=true;try{await ghContents(newPath)}catch(e){if(e.status===404)targetExists=false;else throw e}if(targetExists)throw new Error('يوجد عنصر بهذا الاسم بالفعل');
+    const item=await ghContents(oldPath);
+    if(Array.isArray(item)){
+      if(!item.length)await ghCreate(`${newPath}/.keep`,btoa(''),`Rename ${oldPath}`);
+      else for(const child of item){const suffix=child.path.slice(oldPath.length).replace(/^\//,'');await recursiveRename(child.path,`${newPath}/${suffix}`)}
+    }else{const content=await fileBase64(oldPath,item);await ghCreate(newPath,content,`Rename ${oldPath} to ${newPath}`)}
+    await recursiveDelete(oldPath); return true;
   }
 
   function normalizeClientIdFromPath(path){return `client:${path}`}
@@ -387,7 +463,7 @@
         const name=String(fd.get('title')||'').trim(); const code=String(fd.get('code')||name.slice(0,2)).trim(); const description=String(fd.get('content')||'').trim();
         if(!name)throw new Error('اسم العميل مطلوب'); if(/[\\/]/.test(name))throw new Error('اسم العميل لا يمكن أن يحتوي على / أو \\');
         const path=`clients/${name}`; const meta={name,code,status:'نشط',description,createdAt:new Date().toISOString().slice(0,10)};
-        if(!hasCloud())throw new Error('الحفظ المشترك غير مهيأ. تحقق من API_BASE ونشر واجهة الحفظ ثم أعد تحميل الموقع.');
+        if(!hasCloud())throw new Error('الحفظ المباشر في GitHub غير مهيأ. ضع التوكن في site/js/config.js ثم أعد تحميل الموقع.');
         try{await ghCreate(`${path}/.keep`,btoa(''),`Create client ${name}`);await ghCreate(`${path}/.client.json`,b64utf8(JSON.stringify(meta,null,2)),`Create client metadata ${name}`)}catch(err){try{await recursiveDelete(path)}catch{}throw err}
         modal.classList.remove('show');await refreshCloud();goClient(normalizeClientIdFromPath(path), '');toast('تمت إضافة العميل ومساحته بنجاح.');return;
       }
@@ -418,7 +494,7 @@
   function initTheme(){const saved=localStorage.getItem('central-theme');const use=saved||'light';document.documentElement.classList.toggle('dark',use==='dark');$('#themeToggle').onclick=()=>{const d=!document.documentElement.classList.contains('dark');document.documentElement.classList.toggle('dark',d);localStorage.setItem('central-theme',d?'dark':'light')}}
   function boot(){const b=$('#boot'),status=$('#boot-status'),f=$('#fingerprint');const open=async()=>{b.classList.add('scanning');status.textContent='جارٍ فتح المساحة…';await new Promise(r=>setTimeout(r,260));status.textContent='تم التحقق';b.classList.add('hide')};f.onclick=open;f.onpointerdown=e=>f.setPointerCapture?.(e.pointerId);f.onkeydown=e=>{if(e.key==='Enter'||e.key===' ')open()};setTimeout(()=>{status.textContent='المساحة جاهزة — المس البصمة';},900)}
 
-  $('#mobileMenu').onclick=()=>$('#sidebar').classList.add('open');$('#closeSide').onclick=()=>$('#sidebar').classList.remove('open');$('#syncPill').onclick=async()=>{if(!hasCloud()){toast('تحقق من إعداد API الحفظ ثم أعد تحميل الموقع.');return}await refreshCloud();};$('#addGlobal').onclick=()=>showAdd('global');$('#sideAdd').onclick=()=>showAdd('global');$('#modalClose').onclick=()=>$('#modal').classList.remove('show');$('.modal-backdrop')?.addEventListener('click',()=>$('#modal').classList.remove('show'));
+  $('#mobileMenu').onclick=()=>$('#sidebar').classList.add('open');$('#closeSide').onclick=()=>$('#sidebar').classList.remove('open');$('#syncPill').onclick=async()=>{if(!hasCloud()){toast('ضع GitHub Token في config.js ثم أعد تحميل الموقع.');return}await refreshCloud();};$('#addGlobal').onclick=()=>showAdd('global');$('#sideAdd').onclick=()=>showAdd('global');$('#modalClose').onclick=()=>$('#modal').classList.remove('show');$('.modal-backdrop')?.addEventListener('click',()=>$('#modal').classList.remove('show'));
   $('#clientSearch')?.addEventListener('input',renderClients);
   window.addEventListener('hashchange',()=>{const h=decodeURIComponent(location.hash.slice(1)||'home');if(h.startsWith('client/')){const pieces=h.split('/');const id=pieces[1];const path=pieces.slice(2).filter(Boolean).join('/');goClient(id,path)}else go(h)});
 
