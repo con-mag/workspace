@@ -83,6 +83,32 @@ async function recursiveDelete(path) {
   })});
 }
 
+async function fileBase64(path, item) {
+  if (item && item.content) return String(item.content).replace(/\n/g, "");
+  const source = item?.download_url;
+  if (!source) throw new Error("تعذر الوصول إلى محتوى الملف");
+  const r = await fetch(source, {headers:{"Authorization":`Bearer ${TOKEN}`,"Accept":"application/vnd.github.raw"}});
+  if (!r.ok) throw new Error(`تعذر تحميل الملف من GitHub (${r.status})`);
+  return Buffer.from(await r.arrayBuffer()).toString("base64");
+}
+
+async function recursiveRename(oldPath, newPath) {
+  const item = await contents(oldPath);
+  if (Array.isArray(item)) {
+    if (!item.length) {
+      await commitFile(`${newPath}/.keep`, b64utf8(""), `Rename ${oldPath} to ${newPath}`);
+    } else {
+      for (const child of item) {
+        const suffix = child.path.slice(oldPath.length).replace(/^\//, "");
+        await recursiveRename(child.path, `${newPath}/${suffix}`);
+      }
+    }
+  } else {
+    const content = await fileBase64(oldPath, item);
+    await commitFile(newPath, content, `Rename ${oldPath} to ${newPath}`);
+  }
+}
+
 async function handle(req, res) {
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -139,6 +165,23 @@ async function handle(req, res) {
       }});
     }
 
+    if (action === "raw" && method === "GET") {
+      auth(req);
+      const p = safePath(q.path);
+      const data = await contents(p);
+      if (Array.isArray(data)) throw new Error("المسار مجلد");
+      const source = data.download_url;
+      if (!source) throw new Error("تعذر الوصول إلى الملف");
+      const raw = await fetch(source, {headers:{"Authorization":`Bearer ${TOKEN}`,"Accept":"application/vnd.github.raw"}});
+      if (!raw.ok) throw new Error(`تعذر تحميل الملف (${raw.status})`);
+      const buf = Buffer.from(await raw.arrayBuffer());
+      res.statusCode = 200;
+      res.setHeader("Content-Type", raw.headers.get("content-type") || "application/octet-stream");
+      res.setHeader("Content-Length", String(buf.length));
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.end(buf);
+    }
+
     if (action === "data" && method === "GET") {
       try {
         const f = await contents("data/custom.json");
@@ -168,6 +211,17 @@ async function handle(req, res) {
       const p = safePath(body.path);
       const result = await commitFile(p, b64utf8(""), `Create ${p}`);
       return res.status(200).json({ok:true,data:result});
+    }
+
+    if (action === "rename_path" && method === "POST") {
+      const oldPath = safePath(body.path);
+      const newPath = safePath(body.newPath);
+      if (oldPath === newPath) return res.status(200).json({ok:true});
+      if (newPath.startsWith(oldPath + "/")) throw new Error("لا يمكن نقل عنصر إلى داخله");
+      try { await contents(newPath); throw new Error("يوجد عنصر بهذا الاسم بالفعل"); } catch (e) { if (e.message === "يوجد عنصر بهذا الاسم بالفعل") throw e; }
+      await recursiveRename(oldPath, newPath);
+      await recursiveDelete(oldPath);
+      return res.status(200).json({ok:true});
     }
 
     if (action === "delete_path" && method === "POST") {

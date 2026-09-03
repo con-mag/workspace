@@ -85,6 +85,7 @@
   function toast(text){const el=$('#toast');el.textContent=text;el.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>el.classList.remove('show'),2700)}
   function setSync(text,cloud){$('#syncText').textContent=text;$('#syncState').textContent=cloud?'حفظ مشترك + مزامنة':'محلي';$('#syncPill').classList.toggle('cloud',!!cloud);$('#systemNumber').textContent=cloud?'SYNC':'LOCAL';$('#systemDesc').textContent=cloud?'البيانات محفوظة في GitHub عبر واجهة API، والأجهزة ترى النسخة المشتركة نفسها.':'الموقع يعمل محليًا؛ اربط واجهة API ليصبح الحفظ مشتركًا بين الأجهزة.';$('#saveNote').textContent=cloud?'الحفظ والمزامنة المشتركان يعملان.':'لم تُربط واجهة الحفظ المشتركة بعد.'}
   async function apiGet(action, params={}){if(!API) throw new Error('API not configured');const u=new URL(API);u.searchParams.set('action',action);Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));const r=await fetch(u,{cache:'no-store'});const d=await r.json();if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d.data}
+  async function apiRaw(params={}){if(!API) throw new Error('API not configured');const u=new URL(API);u.searchParams.set('action','raw');Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v));const r=await fetch(u,{cache:'no-store',headers:{...(session()?{'Authorization':`Bearer ${session()}`}:{})}});if(!r.ok){let msg=`HTTP ${r.status}`;try{const d=await r.json();msg=d.error||msg}catch{}throw new Error(msg)}return await r.blob()}
   async function apiPost(payload){if(!API) throw new Error('API not configured');const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json',...(session()?{'Authorization':`Bearer ${session()}`}:{})},body:JSON.stringify(payload)});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
   async function ensureLogin(){
     if(session()) return true;
@@ -226,7 +227,7 @@
     const crumbHtml=[`<button class="crumb-btn" data-client-root="${esc(id)}">الجذر</button>`].concat(breadcrumbs.map((seg,i)=>`<span class="crumb-sep">/</span><button class="crumb-btn" data-client-path="${esc(breadcrumbs.slice(0,i+1).join('/'))}">${esc(seg)}</button>`)).join('');
     const project=projects.find(p=>p.clientId===id);
     const baselinePath=(p)=>c.name==='ريتاج علي'&&staticTreeCache?.some(x=>String(x).replace(/\/$/,'')===String(p).replace(/\/$/,''));
-    $('#clientPage').innerHTML=`<div class="client-header"><div><div class="client-breadcrumb"><button type="button" id="backClients">← مكتبة العملاء</button><span>/</span><span>${esc(c.name)}</span></div><div class="client-title"><div class="avatar">${esc((c.code||c.name[0]||'C').slice(0,2))}</div><div><h1>${esc(c.name)}</h1><p>${esc(c.description||'مساحة العميل')} ${project?`· ${esc(project.name)}`:''}</p></div></div></div><div class="client-tools"><button class="ghost-btn" id="refreshClient">↻ تحديث</button><button class="primary-btn" data-add="client-file" data-client="${esc(id)}" data-parent="${esc(currentPath)}">＋ ملف</button><button class="ghost-btn" data-add="client-folder" data-client="${esc(id)}" data-parent="${esc(currentPath)}">＋ مجلد</button></div></div><div class="client-statbar"><div class="client-stat"><b>${folders}</b><span>مجلدات هنا</span></div><div class="client-stat"><b>${files}</b><span>ملفات هنا</span></div><div class="client-stat"><b>${hasCloud()?'متصل':'محلي'}</b><span>مصدر البيانات</span></div><div class="client-stat"><b>${project?'1':'0'}</b><span>مشروع نشط</span></div></div><div class="save-state"><span>${hasCloud()?'<span class="good">● الحفظ المشترك والمزامنة عبر API فعّالان.</span>':'● الوضع المحلي: التغييرات لن تنتقل إلى الأجهزة الأخرى.'}</span><span>${hasCloud()?'تحديث دوري + تحديث يدوي':'غير متصل'}</span></div><div class="folder-toolbar"><div class="breadcrumbs">${crumbHtml}</div><div class="folder-controls"><span class="muted-count">${currentPath||'الجذر'}</span><button type="button" class="sort-btn" id="folderSort" title="تغيير ترتيب المجلدات">↕ ترتيب: ${folderSort==='number'?'رقمي':'حسب الاسم'}</button></div></div><div class="file-grid" id="fileGrid">${entries.map(e=>{const isBaseline=baselinePath(e.path);const canDelete=!isBaseline;return `<article class="file-card ${e.type==='folder'?'folder':''}" data-entry-path="${esc(e.path)}" data-entry-type="${e.type}" tabindex="0" role="${e.type==='folder'?'button':'link'}" aria-label="${esc(e.type==='folder'?'فتح المجلد '+e.name:'معاينة '+e.name)}"><button class="remove-x ${canDelete?'':'protected'}" data-delete-path="${esc(e.path)}" data-protected="${isBaseline?'1':'0'}" title="${canDelete?'حذف':'عنصر أساسي — لا يمكن حذفه'}" aria-label="${canDelete?'حذف '+esc(e.name):'العنصر الأساسي '+esc(e.name)}">×</button><span class="kind">${e.type==='folder'?'مجلد':esc(fileType(e.name))}</span><div class="big-icon">${fileIcon(fileType(e.name),e.type==='folder')}</div><div><h3 title="${esc(e.name)}">${esc(e.name)}</h3><p>${e.type==='folder'?'فتح المجلد':'اضغط للمعاينة'}</p></div></article>`}).join('')||`<div class="client-empty"><div><div class="big-icon" style="margin:auto">${fileIcon('نص')}</div><strong>هذا المجلد فارغ</strong><p>أضف ملفًا أو أنشئ مجلدًا جديدًا من الأزرار أعلاه.</p></div></div>`}</div><div id="fileViewer" class="file-viewer" hidden></div>`;
+    $('#clientPage').innerHTML=`<div class="client-header"><div><div class="client-breadcrumb"><button type="button" id="backClients">← مكتبة العملاء</button><span>/</span><span>${esc(c.name)}</span></div><div class="client-title"><div class="avatar">${esc((c.code||c.name[0]||'C').slice(0,2))}</div><div><h1>${esc(c.name)}</h1><p>${esc(c.description||'مساحة العميل')} ${project?`· ${esc(project.name)}`:''}</p></div></div></div><div class="client-tools"><button class="ghost-btn" id="refreshClient">↻ تحديث</button><button class="primary-btn" data-add="client-file" data-client="${esc(id)}" data-parent="${esc(currentPath)}">＋ ملف</button><button class="ghost-btn" data-add="client-folder" data-client="${esc(id)}" data-parent="${esc(currentPath)}">＋ مجلد</button></div></div><div class="client-statbar"><div class="client-stat"><b>${folders}</b><span>مجلدات هنا</span></div><div class="client-stat"><b>${files}</b><span>ملفات هنا</span></div><div class="client-stat"><b>${hasCloud()?'متصل':'محلي'}</b><span>مصدر البيانات</span></div><div class="client-stat"><b>${project?'1':'0'}</b><span>مشروع نشط</span></div></div><div class="save-state"><span>${hasCloud()?'<span class="good">● الحفظ المشترك والمزامنة عبر API فعّالان.</span>':'● الوضع المحلي: التغييرات لن تنتقل إلى الأجهزة الأخرى.'}</span><span>${hasCloud()?'تحديث دوري + تحديث يدوي':'غير متصل'}</span></div><div class="folder-toolbar"><div class="breadcrumbs">${crumbHtml}</div><div class="folder-controls"><span class="muted-count">${currentPath||'الجذر'}</span><button type="button" class="sort-btn" id="folderSort" title="تغيير ترتيب المجلدات">↕ ترتيب: ${folderSort==='number'?'رقمي':'حسب الاسم'}</button></div></div><div class="file-grid" id="fileGrid">${entries.map(e=>{const isBaseline=baselinePath(e.path);const canEdit=!isBaseline;const canDelete=!isBaseline;return `<article class="file-card ${e.type==='folder'?'folder':''}" data-entry-path="${esc(e.path)}" data-entry-type="${e.type}" tabindex="0" role="${e.type==='folder'?'button':'link'}" aria-label="${esc(e.type==='folder'?'فتح المجلد '+e.name:'معاينة '+e.name)}"><div class="card-tools">${canEdit?`<button class="edit-x" data-rename-path="${esc(e.path)}" data-rename-type="${e.type}" title="إعادة تسمية" aria-label="إعادة تسمية ${esc(e.name)}">✎</button>`:''}<button class="remove-x ${canDelete?'':'protected'}" data-delete-path="${esc(e.path)}" data-protected="${isBaseline?'1':'0'}" title="${canDelete?'حذف':'عنصر أساسي — لا يمكن حذفه'}" aria-label="${canDelete?'حذف '+esc(e.name):'العنصر الأساسي '+esc(e.name)}">×</button></div><span class="kind">${e.type==='folder'?'مجلد':esc(fileType(e.name))}</span><div class="big-icon">${fileIcon(fileType(e.name),e.type==='folder')}</div><div><h3 title="${esc(e.name)}">${esc(e.name)}</h3><p>${e.type==='folder'?'فتح المجلد':'اضغط للمعاينة'}</p></div></article>`}).join('')||`<div class="client-empty"><div><div class="big-icon" style="margin:auto">${fileIcon('نص')}</div><strong>هذا المجلد فارغ</strong><p>أضف ملفًا أو أنشئ مجلدًا جديدًا من الأزرار أعلاه.</p></div></div>`}</div><div id="fileViewer" class="file-viewer" hidden></div>`;
     $('#backClients').onclick=()=>go('clients');
     $('#refreshClient').onclick=async()=>{folderCache.clear();await renderClient(id);toast('تم تحديث مساحة العميل.')};
     bindAddButtons($('#clientPage'));
@@ -237,62 +238,88 @@
     });
     $$('[data-client-root]',$('#clientPage')).forEach(b=>b.onclick=()=>goClient(id,''));
     $$('[data-client-path]',$('#clientPage')).forEach(b=>b.onclick=()=>goClient(id,b.dataset.clientPath));
-    $$('[data-delete-path]',$('#fileGrid')).forEach(b=>b.onclick=async e=>{e.stopPropagation();if(b.dataset.protected==='1'){toast('هذا المجلد جزء من قالب العميل الأساسي ولا يمكن حذفه.');return}await deleteClientPath(id,b.dataset.deletePath)});
+    $$('[data-delete-path]',$('#fileGrid')).forEach(b=>b.onclick=async e=>{e.stopPropagation();if(b.dataset.protected==='1'){toast('هذا العنصر جزء من قالب العميل الأساسي ولا يمكن حذفه.');return}await deleteClientPath(id,b.dataset.deletePath)});
+    $$('[data-rename-path]',$('#fileGrid')).forEach(b=>b.onclick=async e=>{e.stopPropagation();if(b.dataset.renamePath&&b.dataset.renamePath.includes('/.keep'))return;await renameClientPath(id,b.dataset.renamePath,b.dataset.renameType)});
     $('#folderSort').onclick=async()=>{folderSort=folderSort==='number'?'name':'number';folderCache.clear();await renderClient(id)};
   }
   async function renderSelectedFile(clientId,path){
     const viewer=$('#fileViewer');if(!viewer)return;
     const name=path.split('/').pop(),kind=fileType(name),ext=(name.split('.').pop()||'').toLowerCase();
     const textable=['txt','md','csv','json','html','css','js','ts','xml','yaml','yml'].includes(ext);
-    const closeViewer=()=>{selectedFile=null;viewer.hidden=true;viewer.innerHTML=''};
+    const closeViewer=()=>{selectedFile=null;viewer.hidden=true;viewer.innerHTML='';if(window.__centralPreviewUrl){URL.revokeObjectURL(window.__centralPreviewUrl);window.__centralPreviewUrl=''}};
     let blob=null,meta=null,source='';
     try{
       if(hasCloud()){
         meta=await apiGet('file',{path:`${clientPath(clientId)}/${path}`});
-        if(meta?.contentBase64) blob=base64ToBlob(meta.contentBase64,mimeFor(name));
-        else if(meta?.content!=null) blob=new Blob([typeof meta.content==='string'?meta.content:JSON.stringify(meta.content,null,2)],{type:mimeFor(name)});
+        blob=await apiRaw({path:`${clientPath(clientId)}/${path}`});
         source='مشترك';
       }else{
         meta=await localGet(localKey(clientId,path));
-        if(meta?.blob) blob=meta.blob;
+        if(meta?.blob)blob=meta.blob;
         source='محلي';
       }
-      if(!blob)throw new Error('تعذر تحميل الملف للمعاينة');
-      const url=URL.createObjectURL(blob);
+      if(!blob)throw new Error('تعذر تحميل الملف.');
+      if(window.__centralPreviewUrl)URL.revokeObjectURL(window.__centralPreviewUrl);
+      const url=URL.createObjectURL(blob);window.__centralPreviewUrl=url;
       let body='';
       if(textable){
         const content=await blob.text();
         body=`<textarea id="fileEditor" class="file-editor" spellcheck="false">${esc(content)}</textarea>`;
       }else if(ext==='pdf'){
-        body=`<iframe class="file-open-frame" src="${url}" title="${esc(name)}"></iframe>`;
-      }else if(ext==='docx'){
+        body=`<div class="preview-stage pdf-stage"><object class="file-open-frame" data="${url}" type="application/pdf"><iframe class="file-open-frame" src="${url}" title="${esc(name)}"></iframe></object><div class="preview-fallback"><strong>إذا لم يظهر الـPDF داخل المتصفح:</strong><span>استخدم التحميل أو افتحه في تبويب مستقل.</span></div></div>`;
+      }else if(['docx','doc'].includes(ext)){
         body=`<div id="docxPreview" class="docx-preview"><div class="preview-loading">جارٍ تجهيز معاينة Word…</div></div>`;
       }else if(['png','jpg','jpeg','webp','gif','svg'].includes(ext)){
         body=`<img class="file-preview-image" src="${url}" alt="${esc(name)}">`;
       }else if(['mp4','mov','webm'].includes(ext)){
         body=`<video class="file-preview-video" src="${url}" controls playsinline></video>`;
       }else{
-        body=`<div class="binary-open"><div class="big-icon" style="margin:auto">${fileIcon(kind)}</div><h3>${esc(kind)} — معاينة غير متاحة</h3><p>يمكنك الاحتفاظ بالملف أو حذفه من علامة ×.</p></div>`;
+        body=`<div class="binary-open"><div class="big-icon" style="margin:auto">${fileIcon(kind)}</div><h3>هذا الملف لا يملك عارضًا داخليًا.</h3><p>لكن يمكنك تنزيله أو فتحه خارجيًا.</p></div>`;
       }
       const editable=textable;
+      const googleTypes=['pdf','docx','doc','xlsx','xls','pptx','ppt'];
+      const canGoogle=hasCloud()&&googleTypes.includes(ext)&&meta?.download_url;
+      const downloadLabel=textable?'تحميل الملف':'تحميل / تنزيل الملف';
+      const googleBtn=canGoogle?`<button class="ghost-btn" id="googleViewBtn">فتح عبر Google Drive / Docs</button>`:'';
       viewer.hidden=false;
-      viewer.innerHTML=`<div class="viewer-head"><div><h2>${esc(name)}</h2><p>${esc(path)}</p></div><div class="viewer-head-actions"><span class="tag">${esc(source)} · ${esc(kind)}</span><button type="button" class="viewer-close" id="closeViewer" title="إغلاق المعاينة" aria-label="إغلاق المعاينة">×</button></div></div><div class="viewer-body">${body}<div class="viewer-actions">${editable?'<button class="primary-btn" id="saveFileBtn">حفظ التعديلات</button>':''}<button class="danger-btn" id="deleteFileBtn">حذف الملف</button></div><div class="path-line">${esc(path)}</div></div>`;
+      viewer.innerHTML=`<div class="viewer-head"><div><h2>${esc(name)}</h2><p>${esc(path)}</p></div><div class="viewer-head-actions"><span class="tag">${esc(source)} · ${esc(kind)}</span><button type="button" class="viewer-close" id="closeViewer" title="إغلاق المعاينة" aria-label="إغلاق المعاينة">×</button></div></div><div class="viewer-body">${body}<div class="viewer-actions">${editable?'<button class="primary-btn" id="saveFileBtn">حفظ التعديلات</button>':''}<a class="primary-btn" id="downloadFileBtn" href="${url}" download="${esc(name)}">↓ ${downloadLabel}</a><button class="ghost-btn" id="openFileBtn">فتح في تبويب جديد</button>${googleBtn}<button class="danger-btn" id="deleteFileBtn">حذف الملف</button></div><div class="path-line">${esc(path)}</div></div>`;
       $('#closeViewer').onclick=closeViewer;
-      if(editable){
-        if(hasCloud())$('#saveFileBtn').onclick=()=>saveTextFile(clientId,path,meta);
-        else $('#saveFileBtn').onclick=()=>saveLocalTextFile(clientId,path,meta);
-      }
+      $('#openFileBtn').onclick=()=>window.open(url,'_blank','noopener');
+      if(canGoogle){$('#googleViewBtn').onclick=()=>{const g=`https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(meta.download_url)}`;window.open(g,'_blank','noopener')}}
+      if(editable){if(hasCloud())$('#saveFileBtn').onclick=()=>saveTextFile(clientId,path,meta);else $('#saveFileBtn').onclick=()=>saveLocalTextFile(clientId,path,meta)}
       $('#deleteFileBtn').onclick=async()=>{closeViewer();await deleteClientPath(clientId,path)};
-      if(ext==='docx'){
-        if(window.mammoth){
+      if(['docx','doc'].includes(ext)){
+        if(ext==='doc'&&!window.mammoth){$('#docxPreview').innerHTML='<div class="preview-error">ملفات DOC القديمة لا يمكن تحويلها دائمًا إلى HTML داخل المتصفح. استخدم زر «فتح عبر Google Drive / Docs» أو التحميل.</div>'}
+        else if(window.mammoth){
           try{const arrayBuffer=await blob.arrayBuffer();const result=await window.mammoth.convertToHtml({arrayBuffer});$('#docxPreview').innerHTML=result.value||'<div class="preview-empty">لا يوجد محتوى قابل للعرض.</div>';}
-          catch(e){$('#docxPreview').innerHTML=`<div class="preview-error">تعذر إنشاء معاينة Word: ${esc(e.message||'خطأ غير معروف')}</div>`;}
-        }else $('#docxPreview').innerHTML='<div class="preview-error">تعذر تحميل محرك معاينة Word.</div>';
+          catch(e){$('#docxPreview').innerHTML=`<div class="preview-error">تعذر إنشاء معاينة Word. استخدم «فتح عبر Google Drive / Docs» أو التحميل.<br><small>${esc(e.message||'خطأ غير معروف')}</small></div>`}
+        }
       }
       viewer.scrollIntoView({behavior:'smooth',block:'start'});
     }catch(e){
-      viewer.hidden=false;viewer.innerHTML=`<div class="viewer-head"><div><h2>${esc(name)}</h2><p>${esc(path)}</p></div><button type="button" class="viewer-close" id="closeViewer" aria-label="إغلاق المعاينة">×</button></div><div class="viewer-body"><div class="preview-error">${esc(e.message||'تعذر فتح الملف')}</div></div>`;$('#closeViewer').onclick=closeViewer;
+      viewer.hidden=false;viewer.innerHTML=`<div class="viewer-head"><div><h2>${esc(name)}</h2><p>${esc(path)}</p></div><button type="button" class="viewer-close" id="closeViewer" aria-label="إغلاق المعاينة">×</button></div><div class="viewer-body"><div class="preview-error">تعذر تحميل المعاينة: ${esc(e.message||'خطأ غير معروف')}</div><div class="viewer-actions"><button class="ghost-btn" id="retryPreview">إعادة المحاولة</button></div></div>`;$('#closeViewer').onclick=closeViewer;$('#retryPreview').onclick=()=>renderSelectedFile(clientId,path);
     }
+  }
+  async function renameClientPath(clientId,path,type){
+    if(!(await ensureLogin()))return;
+    const oldName=path.split('/').pop();
+    const next=prompt(`اكتب الاسم الجديد لـ «${oldName}»`,oldName);
+    if(next===null)return;
+    const newName=String(next).trim();
+    if(!newName||newName===oldName||/[\\/]/.test(newName)){if(newName&&/[\\/]/.test(newName))toast('الاسم غير صالح.');return}
+    if(newName.startsWith('.')){toast('لا تستخدم اسمًا يبدأ بنقطة.');return}
+    const parent=path.includes('/')?path.slice(0,path.lastIndexOf('/')):'';
+    const newPath=parent?`${parent}/${newName}`:newName;
+    try{
+      if(hasCloud()){
+        await mutateGithub('rename_path',{path:`${clientPath(clientId)}/${path}`,newPath:`${clientPath(clientId)}/${newPath}`});
+      }else{
+        const all=await localAll(clientId),targets=all.filter(x=>x.path===path||x.path.startsWith(path+'/'));
+        if(!targets.length)throw new Error('العنصر غير موجود محليًا.');
+        for(const x of targets){const suffix=x.path===path?'':x.path.slice(path.length+1);const np=suffix?`${newPath}/${suffix}`:newPath;await localPut({...x,key:localKey(clientId,np),path:np,parent:np.includes('/')?np.slice(0,np.lastIndexOf('/')):''}) ;if(x.key!==localKey(clientId,np))await localRemove(x.key)}
+      }
+      folderCache.clear();await renderClient(clientId);toast('تمت إعادة التسمية بنجاح.');
+    }catch(e){toast(`تعذر تغيير الاسم: ${e.message}`)}
   }
   async function saveLocalTextFile(clientId,path,item){
     if(!(await ensureLogin()))return;
