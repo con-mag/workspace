@@ -24,7 +24,7 @@
   let custom={entries:[],projects:[],knowledge:[],ideas:[],sources:[]};
   let clients=[...baseClients], projects=[...baseProjects];
   let currentRoute='home', openClient=null, currentPath='', selectedFile=null, folderCache=new Map(), clientMetaCache=new Map(), folderSort='number';
-  let remoteReady=false, pollTimer=null, pollBusy=false, remoteFingerprint='';
+  let remoteReady=false, pollTimer=null, pollBusy=false, mutationBusy=false, remoteFingerprint='';
   const uniqueById=arr=>{const m=new Map();for(const x of arr||[]){if(x?.id)m.set(x.id,x)}return [...m.values()]};
 
   function loadLocalState(){try{return JSON.parse(localStorage.getItem(LOCAL_KEY)||'{}')}catch{return {}}}
@@ -56,28 +56,36 @@
   function hasCloud(){return CLOUD_CONFIGURED}
   function cloudError(e){
     if(e?.code==='AUTH_INVALID') return 'توكن GitHub غير صالح أو منتهي الصلاحية (401).';
-    if(e?.code==='AUTH_FORBIDDEN') return 'GitHub رفض العملية (403). تحقق من صلاحية Contents: Read and write، ومن أن التوكن مقيد بالمستودع الصحيح.';
+    if(e?.code==='AUTH_FORBIDDEN') return 'GitHub رفض العملية (403). تأكد من أن التوكن يملك Contents: Read and write وأن المستودع con-mag/workspace مُحدد ضمن صلاحياته.';
     if(e?.code==='NOT_FOUND') return 'المستودع أو المسار غير موجود (404). تحقق من OWNER وREPO وBRANCH.';
     if(e?.code==='VALIDATION') return `GitHub رفض البيانات (422): ${e.message}`;
     if(e?.code==='CONFLICT') return 'حدث تعارض مع تغيير آخر على GitHub. أعد المحاولة.';
     if(e instanceof TypeError) return 'تعذر الوصول إلى GitHub. تحقق من اتصال الإنترنت وقيود المتصفح/النطاق.';
     return e?.message||'خطأ غير معروف';
   }
-  function ghHeaders(){return {'Accept':'application/vnd.github+json','Authorization':`Bearer ${GH_TOKEN_VALUE}`,'X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'}}
-  async function ghFetch(path,options={}){
+  function ghHeaders(){return {'Accept':'application/vnd.github+json','Authorization':`Bearer ${GH_TOKEN_VALUE}`,'X-GitHub-Api-Version':'2022-11-28'}}
+  async function ghFetch(path,options={},attempt=0){
     const query=options.query||'';
     const method=String(options.method||'GET').toUpperCase();
     const cacheBust=(method==='GET'||method==='HEAD') ? `${query}${query.includes('?')?'&':'?'}_=${Date.now()}` : query;
-    const r=await fetch(`${GH_API}/${path.split('/').map(encodeURIComponent).join('/')}${cacheBust}`,{...options,cache:'no-store',headers:{...ghHeaders(),...(options.headers||{})}});
+    const headers={...ghHeaders(),...(options.headers||{})};
+    if(method!=='GET'&&method!=='HEAD'&&!headers['Content-Type'])headers['Content-Type']='application/json';
+    let r;
+    try{r=await fetch(`${GH_API}/${path.split('/').map(encodeURIComponent).join('/')}${cacheBust}`,{...options,cache:'no-store',headers});}
+    catch(err){
+      if(attempt<2){await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));return ghFetch(path,options,attempt+1)}
+      throw err;
+    }
     let data=null; const text=await r.text(); try{data=text?JSON.parse(text):null}catch{data=text}
     if(!r.ok){
       const detail=data?.message||data?.error||`GitHub HTTP ${r.status}`;
-      const e=new Error(detail);e.status=r.status;e.data=data;
+      const e=new Error(detail);e.status=r.status;e.data=data;e.headers=r.headers;
       if(r.status===401)e.code='AUTH_INVALID';
       else if(r.status===403)e.code='AUTH_FORBIDDEN';
       else if(r.status===404)e.code='NOT_FOUND';
       else if(r.status===409)e.code='CONFLICT';
       else if(r.status===422)e.code='VALIDATION';
+      if([429,500,502,503,504].includes(r.status)&&attempt<2){await new Promise(resolve=>setTimeout(resolve,700*(attempt+1)));return ghFetch(path,options,attempt+1)}
       throw e;
     }
     return data;
@@ -114,9 +122,13 @@
     catch(e){if(e.status!==404)throw e}
     return ghWrite(path,contentBase64,message,'');
   }
-  async function ghDelete(path,sha){
+  async function ghDelete(path,sha,attempt=0){
     const item=sha?{sha}:await ghFile(path);
-    return ghFetch(path,{method:'DELETE',body:JSON.stringify({message:`Delete ${path}`,branch:GH_BRANCH,sha:item.sha})});
+    try{return await ghFetch(path,{method:'DELETE',body:JSON.stringify({message:`Delete ${path}`,branch:GH_BRANCH,sha:item.sha})})}
+    catch(e){
+      if(e.status===409&&attempt<2){const fresh=await ghFile(path);return ghDelete(path,fresh.sha,attempt+1)}
+      throw e;
+    }
   }
   async function ensureLogin(){
     if(session()) return true;
@@ -131,15 +143,19 @@
   }
   async function mutateGithub(action,payload={}){
     if(!(await ensureLogin()))throw new Error('cancelled');
-    let r;
-    if(action==='create_file')r=await ghCreate(payload.path,payload.contentBase64,`Add ${payload.path}`);
-    else if(action==='update_file')r=await ghWrite(payload.path,payload.contentBase64,`Update ${payload.path}`,payload.sha||'');
-    else if(action==='create_folder')r=await ghCreate(payload.path,btoa(''),`Create ${payload.path}`);
-    else if(action==='delete_path')r=await recursiveDelete(payload.path);
-    else if(action==='rename_path')r=await recursiveRename(payload.path,payload.newPath);
-    else if(action==='mutate_data')r=await mutateData(payload.kind,payload.operation,payload.item);
-    else throw new Error('عملية غير مدعومة');
-    remoteReady=true; notifySave('تم الحفظ على GitHub'); return r;
+    while(mutationBusy)await new Promise(resolve=>setTimeout(resolve,80));
+    mutationBusy=true;
+    try{
+      let r;
+      if(action==='create_file')r=await ghCreate(payload.path,payload.contentBase64,`Add ${payload.path}`);
+      else if(action==='update_file')r=await ghWrite(payload.path,payload.contentBase64,`Update ${payload.path}`,payload.sha||'');
+      else if(action==='create_folder')r=await ghCreate(payload.path,btoa(''),`Create ${payload.path}`);
+      else if(action==='delete_path')r=await recursiveDelete(payload.path);
+      else if(action==='rename_path')r=await recursiveRename(payload.path,payload.newPath);
+      else if(action==='mutate_data')r=await mutateData(payload.kind,payload.operation,payload.item);
+      else throw new Error('عملية غير مدعومة');
+      remoteReady=true; notifySave('تم الحفظ على GitHub'); return r;
+    }finally{mutationBusy=false}
   }
   async function mutateData(kind,operation,item){
     const allowed=['entries','projects','knowledge','ideas','sources']; if(!allowed.includes(kind))throw new Error('نوع بيانات غير مسموح');
@@ -210,7 +226,7 @@
       const changed=fingerprint!==remoteFingerprint; remoteFingerprint=fingerprint;remoteReady=true;folderCache.clear();localSave();setSync('مشترك',true);if(changed||currentRoute==='clients'||openClient){renderRoute(currentRoute);if(openClient)await renderClient(openClient)}
     }catch(e){remoteReady=false;setSync('غير متصل',false);console.warn('GitHub sync:',e);toast(`تعذر الاتصال بـGitHub: ${cloudError(e)}`)}
   }
-  function startPolling(){if(!CLOUD_CONFIGURED)return;clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy)return;pollBusy=true;try{await refreshCloud()}finally{pollBusy=false}},POLL_MS)}
+  function startPolling(){if(!CLOUD_CONFIGURED)return;clearInterval(pollTimer);pollTimer=setInterval(async()=>{if(pollBusy||mutationBusy)return;pollBusy=true;try{await refreshCloud()}finally{pollBusy=false}},POLL_MS)}
 
   function go(route){currentRoute=route;openClient=null;currentPath='';selectedFile=null;location.hash=route;$$('.route').forEach(r=>r.classList.toggle('active',r.dataset.routeView===route));$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.route===route));renderRoute(route);window.scrollTo({top:0,behavior:'smooth'});if(innerWidth<861)$('#sidebar').classList.remove('open')}
   function goClient(id,path='',file=null){openClient=id;currentRoute='client';currentPath=path||'';selectedFile=file;location.hash=`client/${encodeURIComponent(id)}${path?`/${encodeURIComponent(path)}`:''}`;$$('.route').forEach(r=>r.classList.toggle('active',r.dataset.routeView==='client'));$$('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.route==='clients'));renderClient(id);window.scrollTo({top:0,behavior:'smooth'});if(innerWidth<861)$('#sidebar').classList.remove('open')}
