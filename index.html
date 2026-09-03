@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef0f5">
+<meta name="description" content="المركز — نظام مركزي للمعرفة والعملاء والمشروعات والمحتوى والملفات.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="site.webmanifest">
+<title>المركز — نظام العمل والمعرفة</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="boot" class="boot" aria-label="شاشة الدخول">
+  <div class="boot-grid"></div><div class="boot-vignette"></div>
+  <div class="boot-core">
+    <div class="boot-brand"><span class="boot-mark">م</span><strong>المركز</strong></div>
+    <button class="fingerprint" id="fingerprint" type="button" aria-label="الدخول بالبصمة">
+      <span class="scan-ring"></span><span class="scan-ring two"></span>
+      <svg viewBox="0 0 128 128" class="finger-svg" aria-hidden="true">
+        <path d="M64 14c-22 0-39 17-39 39 0 11 4 21 10 29"/><path d="M64 25c-15 0-27 12-27 28 0 9 3 17 8 24"/><path d="M64 36c-9 0-16 7-16 17 0 17 10 25 8 39"/><path d="M64 47c-4 0-7 3-7 7 0 17 10 24 10 39"/><path d="M64 14c22 0 39 17 39 39 0 15-7 28-17 37"/><path d="M64 25c15 0 27 12 27 28 0 13-5 24-13 31"/><path d="M64 36c9 0 16 7 16 17 0 12-5 20-8 29"/><path d="M64 47c4 0 7 3 7 7 0 10-5 17-7 25"/>
+      </svg>
+    </button>
+    <div class="boot-copy"><span>PRIVATE WORKSPACE</span><h1>أنت مرحب بدخولك</h1><p>المس البصمة لفتح مساحة العمل.</p></div>
+    <div id="boot-status" class="boot-status">بانتظار الإشارة…</div>
+  </div>
+</div>
+
+<header class="topbar">
+  <button class="icon-btn mobile-menu" id="mobileMenu" aria-label="فتح القائمة">☰</button>
+  <a class="brand" href="#home" data-route="home"><span class="brand-symbol">م</span><span class="brand-copy"><strong>المركز</strong><small>نظام العمل والمعرفة</small></span></a>
+  <div class="global-search" id="searchWrap">
+    <span class="search-icon">⌕</span><input id="searchInput" autocomplete="off" placeholder="ابحث في المركز: سؤال، فكرة، مصطلح، عميل، ملف، أو مصدر…"><kbd>Ctrl K</kbd><button class="clear-search" id="clearSearch" type="button">Esc</button><div id="searchResults" class="search-results"></div>
+  </div>
+  <div class="top-actions"><button class="sync-pill" id="syncPill" type="button"><span class="status-dot"></span><span id="syncText">محلي</span></button><button class="icon-btn add-global" id="addGlobal" title="إضافة">＋</button><button class="icon-btn theme-btn" id="themeToggle" title="المظهر">◐</button></div>
+</header>
+
+<div class="app-shell">
+<aside class="sidebar" id="sidebar">
+  <div class="side-top"><div class="system-status"><span></span><div><b>المركز يعمل</b><small id="syncState">جاهز</small></div></div><button class="collapse-btn" id="closeSide">×</button></div>
+  <nav>
+    <div class="nav-label">المركز</div>
+    <a class="nav-item active" data-route="home" href="#home"><i data-icon="home"></i><span>الرئيسية</span></a>
+    <a class="nav-item" data-route="knowledge" href="#knowledge"><i data-icon="book"></i><span>قاعدة المعرفة</span></a>
+    <a class="nav-item" data-route="playbook" href="#playbook"><i data-icon="layers"></i><span>دليل التشغيل</span></a>
+    <a class="nav-item" data-route="ideas" href="#ideas"><i data-icon="spark"></i><span>مختبر الأفكار</span></a>
+    <a class="nav-item" data-route="analytics" href="#analytics"><i data-icon="chart"></i><span>القياس والتحليل</span></a>
+    <div class="nav-label">العمل</div>
+    <a class="nav-item" data-route="clients" href="#clients"><i data-icon="users"></i><span>مكتبة العملاء</span><button class="nav-add" data-add="client" title="إضافة عميل">＋</button></a>
+    <a class="nav-item" data-route="projects" href="#projects"><i data-icon="brief"></i><span>المشروعات</span><button class="nav-add" data-add="project" title="إضافة مشروع">＋</button></a>
+    <div class="nav-label">المرجع</div>
+    <a class="nav-item" data-route="dictionary" href="#dictionary"><i data-icon="type"></i><span>المصطلحات</span></a>
+    <a class="nav-item" data-route="sources" href="#sources"><i data-icon="link"></i><span>المصادر</span></a>
+    <a class="nav-item" data-route="standards" href="#standards"><i data-icon="shield"></i><span>المعايير</span></a>
+  </nav>
+  <div class="side-bottom"><div class="side-note"><b>قاعدة النظام</b><span>لا قرار بلا سبب، ولا نتيجة بلا قياس.</span></div><button class="add-wide" id="sideAdd"><span>＋</span> إضافة جديدة</button></div>
+</aside>
+
+<main class="main" id="main">
+<section class="route active" id="route-home" data-route-view="home">
+  <div class="hero-grid">
+    <div class="hero-card hero-main"><div class="hero-glow"></div><div class="hero-orbit orbit-a"></div><div class="hero-orbit orbit-b"></div><div class="eyebrow">CENTRAL WORKSPACE</div><h1>نظام واحد<br><span>لعملٍ أكثر هدوءًا ووضوحًا.</span></h1><p>مركزك العام للمعرفة، العملاء، المشروعات، المحتوى، القياس، والقرارات؛ مبني ليكبر معك دون أن يتحول إلى عبء إداري.</p><div class="hero-actions"><button class="primary-btn" data-go="clients">افتح مكتبة العملاء <span>←</span></button><button class="ghost-btn" data-go="knowledge">اذهب إلى قاعدة المعرفة</button></div></div>
+    <div class="hero-card system-card"><div class="card-head"><span>حالة النظام</span><i data-icon="pulse"></i></div><div class="system-number" id="systemNumber">LOCAL</div><p id="systemDesc">الموقع يعمل محليًا. بعد ربط واجهة الـAPI ستصبح البيانات مشتركة بين الأجهزة.</p><div class="mini-grid"><div><b id="clientCount">1</b><small>عملاء</small></div><div><b id="projectCount">1</b><small>مشروعات</small></div><div><b id="ideaCount">0</b><small>أفكار</small></div></div><div class="save-note"><span class="save-led"></span><span id="saveNote">لم يُربط التخزين المشترك بعد.</span></div></div>
+  </div>
+  <div class="section-heading"><div><span class="eyebrow">CONTROL DECK</span><h2>لوحة القيادة</h2><p>المداخل التي تحتاجها يوميًا، بلا حشو.</p></div><button class="small-add" data-add="entry">＋ إضافة</button></div><div class="dashboard-grid" id="dashboardCards"></div>
+  <div class="section-heading"><div><span class="eyebrow">WORKFLOW</span><h2>دورة العمل</h2></div></div><div class="workflow"><div class="flow-node"><b>01</b><strong>بحث</strong><small>ماذا نعرف؟</small></div><span>→</span><div class="flow-node"><b>02</b><strong>استراتيجية</strong><small>ماذا نريد؟</small></div><span>→</span><div class="flow-node"><b>03</b><strong>محتوى</strong><small>ماذا نقول؟</small></div><span>→</span><div class="flow-node"><b>04</b><strong>تنفيذ</strong><small>كيف ننشر؟</small></div><span>→</span><div class="flow-node"><b>05</b><strong>قياس</strong><small>ماذا حدث؟</small></div><span>→</span><div class="flow-node"><b>06</b><strong>تعلم</strong><small>ماذا نغيّر؟</small></div></div>
+  <div class="section-heading"><div><span class="eyebrow">CLIENT LIBRARY</span><h2>مكتبة العملاء</h2><p>كل عميل مساحة فعلية، لا بطاقة تعريف فقط.</p></div><button class="small-add" data-add="client">＋ عميل جديد</button></div><div id="homeClients" class="client-strip"></div>
+</section>
+<section class="route" id="route-knowledge" data-route-view="knowledge"><div class="page-head"><div><span class="eyebrow">KNOWLEDGE BASE</span><h1>قاعدة المعرفة</h1><p>مرجع عملي يفرّق بين الحقيقة، أفضل ممارسة، الفرضية، والخرافة.</p></div><button class="primary-btn" data-add="knowledge">＋ إضافة مادة</button></div><div class="filter-row" id="knowledgeFilters"></div><div class="results-count" id="knowledgeCount"></div><div class="knowledge-grid" id="knowledgeGrid"></div></section>
+<section class="route" id="route-playbook" data-route-view="playbook"><div class="page-head"><div><span class="eyebrow">OPERATING PLAYBOOK</span><h1>دليل التشغيل</h1><p>المسار الذي يحول المعرفة إلى تنفيذ.</p></div><button class="primary-btn" data-add="entry">＋ إضافة قاعدة</button></div><div class="playbook-grid" id="playbookGrid"></div></section>
+<section class="route" id="route-ideas" data-route-view="ideas"><div class="page-head"><div><span class="eyebrow">CONTENT LAB</span><h1>مختبر الأفكار</h1><p>زوايا نشر قابلة للتكييف وليست وصفات جامدة.</p></div><button class="primary-btn" data-add="idea">＋ فكرة جديدة</button></div><div class="idea-toolbar"><button class="chip active" data-idea-filter="all">الكل</button><button class="chip" data-idea-filter="discovery">اكتشاف</button><button class="chip" data-idea-filter="authority">خبرة</button><button class="chip" data-idea-filter="connection">علاقة</button><button class="chip" data-idea-filter="community">مجتمع</button><button class="chip" data-idea-filter="conversion">تحويل</button></div><div class="ideas-grid" id="ideasGrid"></div></section>
+<section class="route" id="route-analytics" data-route-view="analytics"><div class="page-head"><div><span class="eyebrow">MEASUREMENT SYSTEM</span><h1>القياس والتحليل</h1><p>الأرقام مادة لاتخاذ القرار، وليست زينة للتقرير.</p></div><button class="primary-btn" data-add="entry">＋ سجل تحليل</button></div><div class="metric-cards" id="metricCards"></div><div class="analytics-shell"><div class="analysis-card"><h3>تشخيصات سريعة</h3><div id="diagnosisList"></div></div><div class="analysis-card"><h3>حلقة التعلم</h3><div class="loop"><span>بيانات</span><i>→</i><span>ملاحظة</span><i>→</i><span>فرضية</span><i>→</i><span>تجربة</span><i>→</i><span>قرار</span></div></div></div></section>
+<section class="route" id="route-clients" data-route-view="clients"><div class="page-head"><div><span class="eyebrow">CLIENT LIBRARY</span><h1>مكتبة العملاء</h1><p>كل بطاقة هنا بوابة إلى مساحة ملفات حقيقية وقابلة للتوسع.</p></div><button class="primary-btn" data-add="client">＋ إضافة عميل</button></div><div class="library-tools"><div class="library-search"><span>⌕</span><input id="clientSearch" placeholder="ابحث عن عميل…"></div><span id="clientLibraryCount" class="muted-count"></span></div><div class="client-grid" id="clientsGrid"></div></section>
+<section class="route" id="route-projects" data-route-view="projects"><div class="page-head"><div><span class="eyebrow">PROJECTS</span><h1>المشروعات</h1><p>المشروعات مرتبطة بالعملاء وقابلة للمتابعة.</p></div><button class="primary-btn" data-add="project">＋ مشروع جديد</button></div><div class="project-grid" id="projectsGrid"></div></section>
+<section class="route" id="route-dictionary" data-route-view="dictionary"><div class="page-head"><div><span class="eyebrow">VOCABULARY</span><h1>قاموس المصطلحات</h1><p>الإنجليزية، النطق، المعنى، والاستخدام العملي.</p></div></div><div class="term-grid" id="termGrid"></div></section>
+<section class="route" id="route-sources" data-route-view="sources"><div class="page-head"><div><span class="eyebrow">SOURCE ROOM</span><h1>غرفة المصادر</h1><p>الأولوية للمصدر الرسمي عند تغير المنصة أو السياسة.</p></div><button class="primary-btn" data-add="source">＋ مصدر جديد</button></div><div class="source-grid" id="sourceGrid"></div></section>
+<section class="route" id="route-standards" data-route-view="standards"><div class="page-head"><div><span class="eyebrow">QUALITY & GOVERNANCE</span><h1>المعايير</h1><p>قواعد تمنع الفوضى، والتوثيق المفرط، والقرارات بلا دليل.</p></div></div><div class="standards-grid" id="standardsGrid"></div></section>
+<section class="route" id="route-client" data-route-view="client"><div class="client-page" id="clientPage"></div></section>
+<footer><span>المركز — نظام العمل والمعرفة</span><span>مصمم ليكبر معك دون أن يثقل عليك.</span></footer>
+</main></div>
+
+<div id="modal" class="modal" aria-hidden="true"><div class="modal-backdrop"></div><div class="modal-card"><button class="modal-close" id="modalClose">×</button><div id="modalContent"></div></div></div>
+<div id="toast" class="toast" role="status"></div><div id="saveBanner" class="save-banner" aria-live="polite"><span class="save-dot"></span><span id="saveBannerText">جاهز</span></div>
+<script src="js/config.js"></script><script src="js/knowledge.js"></script><script src="js/app.js"></script>
+</body></html>
