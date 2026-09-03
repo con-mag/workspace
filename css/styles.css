@@ -173,3 +173,80 @@ html.dark body{
 .hero-glow{opacity:.22}.hero-orbit{opacity:.25}
 .primary-btn{background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 12%,transparent)}
 .icon-btn:hover,.nav-item:hover,.nav-item.active,.dash-card:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line))}
+
+/* v9 — mobile layout, folder manager clarity, iconography */
+html, body, button, .fingerprint, .file-card, .file-card * { -webkit-tap-highlight-color: transparent; }
+body { overflow-x:hidden; }
+button, .fingerprint, .file-card.folder, .nav-item, .dash-card { user-select:none; -webkit-user-select:none; }
+.file-card:not(.folder) { cursor:default; }
+.file-card.folder { cursor:pointer; }
+.file-card .big-icon { display:grid; place-items:center; color:var(--accent3); }
+.file-card .big-icon svg { width:27px; height:27px; display:block; }
+.folder-controls { display:flex; align-items:center; gap:9px; flex-wrap:wrap; }
+.sort-btn { border:1px solid var(--line); background:var(--surface2); color:var(--text); border-radius:10px; padding:7px 10px; font-size:10px; cursor:pointer; }
+.sort-btn:hover { border-color:color-mix(in srgb,var(--accent) 38%,var(--line)); }
+.kind { white-space:nowrap; }
+.remove-mini { z-index:3; }
+
+/* Fingerprint feels like an active scanner, not selectable text. */
+.fingerprint { touch-action:none; user-select:none; -webkit-user-select:none; }
+.fingerprint:active { transform:scale(.985); }
+.fingerprint.scanning { border-color:color-mix(in srgb,var(--accent) 65%,transparent); }
+.fingerprint.scanning::after { content:""; position:absolute; left:20%; right:20%; top:50%; height:2px; border-radius:99px; background:var(--accent); box-shadow:0 0 16px color-mix(in srgb,var(--accent) 60%,transparent); animation:fingerScan .65s ease-in-out infinite; }
+@keyframes fingerScan { 0%,100%{transform:translateY(-30px);opacity:.2} 50%{transform:translateY(30px);opacity:1} }
+
+@media (max-width:860px){
+  .topbar { gap:8px; }
+  .brand { flex:0 0 auto; }
+  .global-search { min-width:0; }
+  .global-search input { padding-right:39px; padding-left:42px; }
+  .main { width:100%; min-width:0; }
+  .client-header { gap:16px; }
+  .client-tools { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%; }
+  .client-tools #refreshClient { grid-column:1/-1; }
+  .client-statbar { width:100%; }
+  .folder-toolbar { display:flex; flex-direction:column; align-items:stretch; gap:10px; }
+  .folder-controls { justify-content:space-between; width:100%; }
+  .breadcrumbs { width:100%; overflow-x:auto; white-space:nowrap; padding-bottom:2px; scrollbar-width:none; }
+  .breadcrumbs::-webkit-scrollbar { display:none; }
+  .file-grid { width:100%; min-width:0; }
+  .file-card { min-width:0; overflow:hidden; }
+  .file-card h3 { white-space:normal; overflow-wrap:anywhere; word-break:break-word; }
+  .file-card p { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+}
+@media (max-width:560px){
+  :root { --top:62px; }
+  .topbar { padding:8px; }
+  .mobile-menu,.theme-btn { width:39px; height:39px; }
+  .brand-symbol { width:38px; height:38px; }
+  .global-search input { height:39px; font-size:11px; }
+  .main { padding:20px 10px 52px; }
+  .hero-main { padding:25px 18px; min-height:0; }
+  .hero-main h1 { font-size:28px; }
+  .hero-title { gap:.32em; }
+  .hero-title .hero-line-accent { margin-top:.08em; }
+  .page-head h1 { font-size:24px; }
+  .client-title { align-items:flex-start; }
+  .client-title h1 { font-size:23px; line-height:1.25; }
+  .client-statbar { gap:7px; }
+  .client-stat { min-width:0; padding:11px 7px; }
+  .client-stat b { font-size:16px; }
+  .client-stat span { font-size:8px; }
+  .client-tools { grid-template-columns:1fr 1fr; }
+  .client-tools .primary-btn,.client-tools .ghost-btn { width:100%; min-width:0; }
+  .file-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+  .file-card { min-height:132px; padding:12px 10px; border-radius:14px; }
+  .file-card .big-icon { width:42px; height:42px; border-radius:12px; }
+  .file-card .big-icon svg { width:23px; height:23px; }
+  .file-card h3 { font-size:10.5px; line-height:1.55; margin-top:8px; }
+  .file-card p { font-size:9px; }
+  .file-card .kind { font-size:8px; }
+  .folder-controls { gap:7px; }
+  .sort-btn { font-size:9px; }
+  .crumb-btn { font-size:9px; }
+}
+@media (max-width:380px){
+  .top-actions .theme-btn { display:none; }
+  .file-grid { grid-template-columns:1fr 1fr; }
+  .file-card { min-height:126px; }
+}
