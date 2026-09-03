@@ -1,10 +1,10 @@
-/* المركز — الحفظ المباشر في GitHub
- * ضع Personal Access Token في TOKEN ثم ارفع الملف إلى GitHub.
+/* المركز — واجهة التخزين الآمن
+ * لا توجد أسرار أو GitHub Tokens داخل المتصفح.
+ * عند نشر المشروع على Vercel يمكن استخدام /api مباشرة.
+ * عند فصل الواجهة عن الـAPI، ضع عنوان API كاملًا بدل /api.
  */
-window.GITHUB_CONFIG = Object.freeze({
-  OWNER: "con-mag",
-  REPO: "workspace",
-  BRANCH: "main",
-  TOKEN: "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",
-  ADMIN_PASSWORD: "1122"
+window.APP_CONFIG = Object.freeze({
+  API_BASE: "/api",
+  POLL_MS: 15000,
+  APP_NAME: "المركز"
 });
